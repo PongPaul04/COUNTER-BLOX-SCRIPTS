@@ -1,0 +1,131 @@
+-- LocalScript placed in StarterPlayerScripts
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- Flag to control script execution
+local scriptRunning = true
+
+-- Function to create a GUI message
+local function createSuccessMessage()
+    if not scriptRunning then return end -- Exit if the script has stopped
+
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "SuccessMessageGui"
+    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Text = "Gawang pinoy Ni Paul Combis."
+    textLabel.Size = UDim2.new(0.3, 0, 0.1, 0)
+    textLabel.Position = UDim2.new(0.35, 0, 0.9, 0)
+    textLabel.TextScaled = true
+    textLabel.BackgroundTransparency = 1
+    textLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+    textLabel.Parent = screenGui
+
+    task.delay(2, function() -- Non-blocking wait
+        if screenGui then
+            screenGui:Destroy() -- Remove the message after 2 seconds
+        end
+    end)
+end
+
+local function highlightPlayer(player)
+    if player == LocalPlayer or not scriptRunning then return end -- Skip highlighting the local player or if stopped
+
+    -- Wait for the character to load
+    local character = player.Character or player.CharacterAdded:Wait()
+
+    if character and scriptRunning then
+        -- Remove any existing highlights
+        for _, obj in pairs(character:GetChildren()) do
+            if obj:IsA("Highlight") then
+                obj:Destroy()
+            end
+        end
+
+        -- Create a Highlight instance
+        local highlight = Instance.new("Highlight")
+        highlight.Adornee = character
+        highlight.FillTransparency = 1 -- Make the fill transparent
+        highlight.OutlineColor = Color3.fromRGB(0, 255, 0) -- Highlight color (green)
+        highlight.Parent = character
+    end
+end
+
+local function onPlayerAdded(player)
+    if not scriptRunning then return end
+
+    -- Highlight the player when their character is added
+    player.CharacterAdded:Connect(function(character)
+        highlightPlayer(player)
+    end)
+
+    -- If the player’s character already exists, apply highlight immediately
+    if player.Character then
+        highlightPlayer(player)
+    end
+end
+
+local function createControlButton(name, text, position, color, callback)
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "ControlGui"
+    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+    local button = Instance.new("TextButton")
+    button.Name = name
+    button.Text = text
+    button.Size = UDim2.new(0.15, 0, 0.05, 0)
+    button.Position = position
+    button.TextScaled = true
+    button.BackgroundColor3 = color
+    button.TextColor3 = Color3.fromRGB(255, 255, 255)
+    button.Parent = screenGui
+
+    button.MouseButton1Click:Connect(callback)
+end
+
+-- Function to create the refresh button
+local function createRefreshButton()
+    createControlButton("RefreshButton", "ULITIN", UDim2.new(0, 0, 0.95, 0), Color3.fromRGB(0, 0, 255), function()
+        if scriptRunning then
+            -- Reapply highlights to all players
+            for _, player in pairs(Players:GetPlayers()) do
+                highlightPlayer(player)
+            end
+            createSuccessMessage() -- Show the success message
+        end
+    end)
+end
+
+-- Function to create the stop button
+local function createStopButton()
+    createControlButton("StopButton", "SIRAIN", UDim2.new(0, 0, 0.9, 0), Color3.fromRGB(255, 0, 0), function()
+        scriptRunning = false -- Stop the script execution
+        -- Destroy all UI elements
+        local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+        for _, gui in pairs(playerGui:GetChildren()) do
+            if gui.Name == "ControlGui" or gui.Name == "SuccessMessageGui" then
+                gui:Destroy()
+            end
+        end
+    end)
+end
+
+-- Initialize script
+if scriptRunning then
+    -- Highlight all current players
+    for _, player in pairs(Players:GetPlayers()) do
+        onPlayerAdded(player)
+    end
+
+    -- Listen for new players joining the game
+    Players.PlayerAdded:Connect(onPlayerAdded)
+
+    -- Create refresh and stop buttons
+    createRefreshButton()
+    createStopButton()
+
+    -- Show success message once at the start
+    createSuccessMessage()
+end
