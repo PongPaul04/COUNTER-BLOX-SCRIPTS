@@ -15,7 +15,7 @@ local function createSuccessMessage()
     screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
     local textLabel = Instance.new("TextLabel")
-    textLabel.Text = "Gawang pinoy."
+    textLabel.Text = "Gawang pinoy Ni Paul Combis."
     textLabel.Size = UDim2.new(0.3, 0, 0.1, 0)
     textLabel.Position = UDim2.new(0.35, 0, 0.9, 0)
     textLabel.TextScaled = true
@@ -48,8 +48,26 @@ local function highlightPlayer(player)
         local highlight = Instance.new("Highlight")
         highlight.Adornee = character
         highlight.FillTransparency = 1 -- Make the fill transparent
-        highlight.OutlineColor = Color3.fromRGB(0, 255, 0) -- Highlight color (green)
+
+        -- Determine highlight color based on team
+        if player.Team == LocalPlayer.Team then
+            highlight.OutlineColor = Color3.fromRGB(0, 255, 0) -- Green for teammates
+        else
+            highlight.OutlineColor = Color3.fromRGB(255, 0, 0) -- Red for enemies
+        end
+        
         highlight.Parent = character
+    end
+end
+
+local function onCharacterAdded(character)
+    if scriptRunning then
+        -- Apply highlight to the new character
+        highlightPlayer(LocalPlayer) -- Highlight local player’s new character
+        -- Connect highlight for all players
+        for _, player in pairs(Players:GetPlayers()) do
+            highlightPlayer(player)
+        end
     end
 end
 
@@ -57,9 +75,7 @@ local function onPlayerAdded(player)
     if not scriptRunning then return end
 
     -- Highlight the player when their character is added
-    player.CharacterAdded:Connect(function(character)
-        highlightPlayer(player)
-    end)
+    player.CharacterAdded:Connect(onCharacterAdded)
 
     -- If the player’s character already exists, apply highlight immediately
     if player.Character then
@@ -112,6 +128,20 @@ local function createStopButton()
     end)
 end
 
+-- Function to reinitialize UI buttons when respawned
+local function onCharacterAdded(character)
+    if not scriptRunning then return end
+    
+    -- Recreate UI buttons
+    createRefreshButton()
+    createStopButton()
+
+    -- Apply highlights to all players
+    for _, player in pairs(Players:GetPlayers()) do
+        highlightPlayer(player)
+    end
+end
+
 -- Initialize script
 if scriptRunning then
     -- Highlight all current players
@@ -122,7 +152,7 @@ if scriptRunning then
     -- Listen for new players joining the game
     Players.PlayerAdded:Connect(onPlayerAdded)
 
-    -- Create refresh and stop buttons
+    -- Create initial refresh and stop buttons
     createRefreshButton()
     createStopButton()
 
