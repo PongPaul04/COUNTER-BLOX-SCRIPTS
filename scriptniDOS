@@ -8,10 +8,10 @@ local LocalPlayer = Players.LocalPlayer
 -- Aimbot states
 local AimbotEnabled = false
 local AimbotHeld = false
-local Smoothness = 0.1  -- Smoothness factor for aiming (lower values = smoother aiming)
+local Smoothness = 1  -- Smoothness factor for aiming (lower values = smoother aiming)
 
 -- FOV setting (in degrees)
-local FOV = 90
+local FOV = 180
 
 -- Flag to control ESP script execution
 local scriptRunning = true
