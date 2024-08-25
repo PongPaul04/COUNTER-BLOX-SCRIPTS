@@ -1,21 +1,109 @@
--- LocalScript placed in StarterPlayerScripts
-
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local Camera = workspace.CurrentCamera
+
 local LocalPlayer = Players.LocalPlayer
 
--- Flag to control script execution
+-- Aimbot states
+local AimbotEnabled = false
+local AimbotHeld = false
+local Smoothness = 0.1  -- Smoothness factor for aiming (lower values = smoother aiming)
+
+-- FOV setting (in degrees)
+local FOV = 90
+
+-- Flag to control ESP script execution
 local scriptRunning = true
+
+-- Function to toggle Aimbot
+local function toggleAimbot()
+    AimbotEnabled = not AimbotEnabled
+    print(AimbotEnabled and "Aimbot Enabled" or "Aimbot Disabled")
+end
+
+-- Function to check if the target is visible (not behind walls)
+local function isTargetVisible(target)
+    local ray = Ray.new(Camera.CFrame.Position, (target.Position - Camera.CFrame.Position).unit * 1000)
+    local hitPart, _ = workspace:FindPartOnRay(ray, LocalPlayer.Character, false, true)
+    return not hitPart or hitPart:IsDescendantOf(target.Parent)
+end
+
+-- Function to check if a position is within the FOV
+local function isInFOV(targetPosition)
+    local screenPosition, onScreen = Camera:WorldToViewportPoint(targetPosition)
+    if onScreen then
+        local viewportSize = Camera.ViewportSize
+        local center = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+        local targetVector = Vector2.new(screenPosition.X, screenPosition.Y)
+        local distanceFromCenter = (targetVector - center).Magnitude
+        local fovRadius = (viewportSize.X / 2) * math.tan(math.rad(FOV / 2))
+        return distanceFromCenter <= fovRadius
+    end
+    return false
+end
+
+-- Function to check if a player is an enemy
+local function isEnemy(player)
+    return player.Team ~= LocalPlayer.Team
+end
+
+-- Function to find the closest visible enemy within the FOV
+local function getClosestVisibleEnemy()
+    local nearestPlayer = nil
+    local shortestDistance = math.huge
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+            if isEnemy(player) and player.Character:FindFirstChildOfClass("Humanoid") and player.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
+                local head = player.Character.Head
+                local distance = (head.Position - Camera.CFrame.Position).Magnitude
+                
+                if distance < shortestDistance and isTargetVisible(head) and isInFOV(head.Position) then
+                    shortestDistance = distance
+                    nearestPlayer = player
+                end
+            end
+        end
+    end
+
+    return nearestPlayer
+end
+
+-- Function to make the camera smoothly aim at the target
+local function aimAt(targetPosition)
+    local currentCFrame = Camera.CFrame
+    local targetCFrame = CFrame.new(currentCFrame.Position, targetPosition)
+    Camera.CFrame = currentCFrame:Lerp(targetCFrame, Smoothness)
+end
+
+-- Function to apply aimbot
+local function applyAimbot()
+    if AimbotEnabled and AimbotHeld then
+        local closestEnemy = getClosestVisibleEnemy()
+        if closestEnemy and closestEnemy.Character and closestEnemy.Character:FindFirstChild("Head") then
+            aimAt(closestEnemy.Character.Head.Position)
+        end
+    end
+end
 
 -- Function to create a GUI message
 local function createSuccessMessage()
-    if not scriptRunning then return end -- Exit if the script has stopped
+    if not scriptRunning then return end
+
+    -- Check for existing GUI and remove it to avoid duplication
+    local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+    local existingGui = playerGui:FindFirstChild("SuccessMessageGui")
+    if existingGui then
+        existingGui:Destroy()
+    end
 
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "SuccessMessageGui"
-    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    screenGui.Parent = playerGui
 
     local textLabel = Instance.new("TextLabel")
-    textLabel.Text = "Gawang pinoy Ni Dos."
+    textLabel.Text = "Gawang pinoy Ni Paul Combis."
     textLabel.Size = UDim2.new(0.3, 0, 0.1, 0)
     textLabel.Position = UDim2.new(0.35, 0, 0.9, 0)
     textLabel.TextScaled = true
@@ -23,67 +111,93 @@ local function createSuccessMessage()
     textLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
     textLabel.Parent = screenGui
 
-    task.delay(2, function() -- Non-blocking wait
+    task.delay(2, function()
         if screenGui then
-            screenGui:Destroy() -- Remove the message after 2 seconds
+            screenGui:Destroy()
         end
     end)
 end
 
-local function highlightPlayer(player)
-    if player == LocalPlayer or not scriptRunning then return end -- Skip highlighting the local player or if stopped
+-- Function to create HP Bars
+local function createHPBar(character)
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
 
-    -- Wait for the character to load
+    local billboardGui = Instance.new("BillboardGui")
+    billboardGui.Name = "HPBar"
+    billboardGui.Size = UDim2.new(4, 0, 1, 0)
+    billboardGui.StudsOffset = Vector3.new(0, 3, 0)
+    billboardGui.AlwaysOnTop = true
+    billboardGui.Parent = character
+
+    local bgFrame = Instance.new("Frame")
+    bgFrame.Size = UDim2.new(1, 0, 0.2, 0)
+    bgFrame.Position = UDim2.new(0, 0, 0.8, 0)
+    bgFrame.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+    bgFrame.Parent = billboardGui
+
+    local hpBar = Instance.new("Frame")
+    hpBar.Size = UDim2.new(1, 0, 1, 0)
+    hpBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    hpBar.Parent = bgFrame
+
+    humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+        if scriptRunning then
+            local healthPercentage = humanoid.Health / humanoid.MaxHealth
+            hpBar.Size = UDim2.new(healthPercentage, 0, 1, 0)
+        end
+    end)
+end
+
+-- Function to highlight a player
+local function highlightPlayer(player)
+    if player == LocalPlayer or not scriptRunning then return end
+
     local character = player.Character or player.CharacterAdded:Wait()
 
     if character and scriptRunning then
-        -- Remove any existing highlights
         for _, obj in pairs(character:GetChildren()) do
-            if obj:IsA("Highlight") then
+            if obj:IsA("Highlight") or obj:IsA("BillboardGui") then
                 obj:Destroy()
             end
         end
 
-        -- Create a Highlight instance
         local highlight = Instance.new("Highlight")
         highlight.Adornee = character
-        highlight.FillTransparency = 1 -- Make the fill transparent
+        highlight.FillTransparency = 1
 
-        -- Determine highlight color based on team
         if player.Team == LocalPlayer.Team then
-            highlight.OutlineColor = Color3.fromRGB(0, 255, 0) -- Green for teammates
+            highlight.OutlineColor = Color3.fromRGB(0, 255, 0)
         else
-            highlight.OutlineColor = Color3.fromRGB(255, 0, 0) -- Red for enemies
+            highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
         end
         
         highlight.Parent = character
-    end
-end
 
-local function onCharacterAdded(character)
-    if scriptRunning then
-        -- Apply highlight to the new character
-        highlightPlayer(LocalPlayer) -- Highlight local player’s new character
-        -- Connect highlight for all players
-        for _, player in pairs(Players:GetPlayers()) do
-            highlightPlayer(player)
-        end
+        createHPBar(character)
     end
 end
 
 local function onPlayerAdded(player)
     if not scriptRunning then return end
 
-    -- Highlight the player when their character is added
-    player.CharacterAdded:Connect(onCharacterAdded)
+    player.CharacterAdded:Connect(function(character)
+        if scriptRunning then
+            highlightPlayer(player)
+        end
+    end)
 
-    -- If the player’s character already exists, apply highlight immediately
     if player.Character then
         highlightPlayer(player)
     end
 end
 
 local function createControlButton(name, text, position, color, callback)
+    local existingButton = LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild(name)
+    if existingButton then
+        existingButton:Destroy()
+    end
+
     local screenGui = Instance.new("ScreenGui")
     screenGui.Name = "ControlGui"
     screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
@@ -101,61 +215,103 @@ local function createControlButton(name, text, position, color, callback)
     button.MouseButton1Click:Connect(callback)
 end
 
--- Function to create the refresh button
 local function createRefreshButton()
     createControlButton("RefreshButton", "ULITIN", UDim2.new(0, 0, 0.95, 0), Color3.fromRGB(0, 0, 255), function()
         if scriptRunning then
-            -- Reapply highlights to all players
             for _, player in pairs(Players:GetPlayers()) do
                 highlightPlayer(player)
             end
-            createSuccessMessage() -- Show the success message
+            createSuccessMessage()
         end
     end)
 end
 
--- Function to create the stop button
 local function createStopButton()
     createControlButton("StopButton", "SIRAIN", UDim2.new(0, 0, 0.9, 0), Color3.fromRGB(255, 0, 0), function()
-        scriptRunning = false -- Stop the script execution
-        -- Destroy all UI elements
+        scriptRunning = false
         local playerGui = LocalPlayer:WaitForChild("PlayerGui")
         for _, gui in pairs(playerGui:GetChildren()) do
             if gui.Name == "ControlGui" or gui.Name == "SuccessMessageGui" then
                 gui:Destroy()
             end
         end
+        print("Script Stopped.")
     end)
 end
 
--- Function to reinitialize UI buttons when respawned
-local function onCharacterAdded(character)
-    if not scriptRunning then return end
-    
-    -- Recreate UI buttons
-    createRefreshButton()
-    createStopButton()
-
-    -- Apply highlights to all players
-    for _, player in pairs(Players:GetPlayers()) do
-        highlightPlayer(player)
-    end
-end
-
--- Initialize script
-if scriptRunning then
-    -- Highlight all current players
-    for _, player in pairs(Players:GetPlayers()) do
-        onPlayerAdded(player)
+local function createSmoothnessSlider()
+    local existingSlider = LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("SmoothnessSlider")
+    if existingSlider then
+        existingSlider:Destroy()
     end
 
-    -- Listen for new players joining the game
-    Players.PlayerAdded:Connect(onPlayerAdded)
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "SmoothnessSliderGui"
+    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-    -- Create initial refresh and stop buttons
-    createRefreshButton()
-    createStopButton()
+    local sliderFrame = Instance.new("Frame")
+    sliderFrame.Size = UDim2.new(0.2, 0, 0.05, 0)
+    sliderFrame.Position = UDim2.new(0.8, 0, 0.9, 0)
+    sliderFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    sliderFrame.Parent = screenGui
 
-    -- Show success message once at the start
-    createSuccessMessage()
+    local sliderButton = Instance.new("TextButton")
+    sliderButton.Size = UDim2.new(0.1, 0, 1, 0)
+    sliderButton.Position = UDim2.new(Smoothness, 0, 0, 0)
+    sliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    sliderButton.Text = ""
+    sliderButton.Parent = sliderFrame
+
+    sliderButton.MouseButton1Down:Connect(function()
+        local dragging = true
+        local mouseMove, mouseUp
+
+        mouseMove = UserInputService.InputChanged:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
+                local relativeX = math.clamp(input.Position.X - sliderFrame.AbsolutePosition.X, 0, sliderFrame.AbsoluteSize.X)
+                sliderButton.Position = UDim2.new(relativeX / sliderFrame.AbsoluteSize.X, 0, 0, 0)
+                Smoothness = sliderButton.Position.X.Scale
+            end
+        end)
+
+        mouseUp = UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 then
+                dragging = false
+                mouseMove:Disconnect()
+                mouseUp:Disconnect()
+            end
+        end)
+    end)
 end
+
+-- Create GUI elements
+createRefreshButton()
+createStopButton()
+createSmoothnessSlider()
+
+-- Connect events
+for _, player in pairs(Players:GetPlayers()) do
+    onPlayerAdded(player)
+end
+Players.PlayerAdded:Connect(onPlayerAdded)
+
+-- Connect to InputBegan event to listen for Aimbot toggle (Q key)
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.Q then
+        toggleAimbot()
+    elseif input.KeyCode == Enum.KeyCode.LeftShift then
+        AimbotHeld = true
+    end
+end)
+
+-- Connect to InputEnded event to listen for Aimbot hold release (Shift key)
+UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.LeftShift then
+        AimbotHeld = false
+    end
+end)
+
+-- Main loop to run Aimbot
+RunService.RenderStepped:Connect(function()
+    applyAimbot()
+end)
