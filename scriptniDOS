@@ -103,7 +103,7 @@ local function createSuccessMessage()
     screenGui.Parent = playerGui
 
     local textLabel = Instance.new("TextLabel")
-    textLabel.Text = "Gawang pinoy Ni Paul Combis."
+    textLabel.Text = "Gawang pinoy Ni DOS."
     textLabel.Size = UDim2.new(0.3, 0, 0.1, 0)
     textLabel.Position = UDim2.new(0.35, 0, 0.9, 0)
     textLabel.TextScaled = true
