@@ -1,125 +1,81 @@
+-- Load the Orion Library
+local OrionLib = loadstring(game:HttpGet('https://raw.githubusercontent.com/shlexware/Orion/main/source'))()
+
+-- Create the main window
+local Window = OrionLib:MakeWindow({
+    Name = "DOSHUB",
+    HidePremium = false,
+    SaveConfig = true,
+    ConfigFolder = "OrionTest"
+})
+
+-- Create tabs
+local EspTab = Window:MakeTab({
+    Name = "ESP",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+local AimbotTab = Window:MakeTab({
+    Name = "AIMBOT",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+local SettingsTab = Window:MakeTab({
+    Name = "Settings",
+    Icon = "rbxassetid://4483345998",
+    PremiumOnly = false
+})
+
+-- Create sections
+local EspSection = EspTab:AddSection({
+    Name = "HIGHLIGHT"
+})
+
+local AimbotSection = AimbotTab:AddSection({
+    Name = "LOCKS"
+})
+
+local SettingsSection = SettingsTab:AddSection({
+    Name = "MISC"
+})
+
+-- Global variables
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local Camera = workspace.CurrentCamera
-
 local LocalPlayer = Players.LocalPlayer
 
--- Aimbot states
 local AimbotEnabled = false
 local AimbotHeld = false
-local Smoothness = 0.1  -- Smoothness factor for aiming (lower values = smoother aiming)
-
--- FOV setting (in degrees)
-local FOV = 90
-
--- Flag to control ESP script execution
+local Smoothness = 2
+local SmoothnessMax = 10
+local HighlightEnabled = false
+local HPBarEnabled = false
+local HeadModEnabled = false
+local HeadOrTorso = "Head" -- Default to modifying the Head
 local scriptRunning = true
+local highlightedPlayer = nil
 
--- Function to toggle Aimbot
-local function toggleAimbot()
-    AimbotEnabled = not AimbotEnabled
-    print(AimbotEnabled and "Aimbot Enabled" or "Aimbot Disabled")
-end
+-- Global settings for head and torso modification
+_G.HeadSize = 15
+_G.Disabled = true
 
--- Function to check if the target is visible (not behind walls)
-local function isTargetVisible(target)
-    local ray = Ray.new(Camera.CFrame.Position, (target.Position - Camera.CFrame.Position).unit * 1000)
-    local hitPart, _ = workspace:FindPartOnRay(ray, LocalPlayer.Character, false, true)
-    return hitPart and hitPart:IsDescendantOf(target.Parent)
-end
-
--- Function to check if a position is within the FOV
-local function isInFOV(targetPosition)
-    local screenPosition, onScreen = Camera:WorldToViewportPoint(targetPosition)
-    if onScreen then
-        local viewportSize = Camera.ViewportSize
-        local center = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
-        local targetVector = Vector2.new(screenPosition.X, screenPosition.Y)
-        local distanceFromCenter = (targetVector - center).Magnitude
-        local fovRadius = (viewportSize.X / 2) * math.tan(math.rad(FOV / 2))
-        return distanceFromCenter <= fovRadius
-    end
-    return false
-end
-
--- Function to check if a player is an enemy
-local function isEnemy(player)
-    return player.Team ~= LocalPlayer.Team
-end
-
--- Function to find the closest visible enemy within the FOV
-local function getClosestVisibleEnemy()
-    local nearestPlayer = nil
-    local shortestDistance = math.huge
-    
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
-            if isEnemy(player) and player.Character:FindFirstChildOfClass("Humanoid") and player.Character:FindFirstChildOfClass("Humanoid").Health > 0 then
-                local head = player.Character.Head
-                local distance = (head.Position - Camera.CFrame.Position).Magnitude
-                
-                if distance < shortestDistance and isTargetVisible(head) and isInFOV(head.Position) then
-                    shortestDistance = distance
-                    nearestPlayer = player
-                end
-            end
-        end
-    end
-
-    return nearestPlayer
-end
-
--- Improved function to make the camera smoothly aim at the target with better accuracy
-local function aimAt(targetPosition)
-    local cameraPosition = Camera.CFrame.Position
-    local direction = (targetPosition - cameraPosition).unit
-    local targetCFrame = CFrame.new(cameraPosition, cameraPosition + direction)
-
-    -- Adjusted lerp factor for smoother transition and improved accuracy
-    Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, Smoothness)
-end
-
--- Function to apply aimbot
-local function applyAimbot()
-    if AimbotEnabled and AimbotHeld then
-        local closestEnemy = getClosestVisibleEnemy()
-        if closestEnemy and closestEnemy.Character and closestEnemy.Character:FindFirstChild("Head") then
-            aimAt(closestEnemy.Character.Head.Position)
-        end
+-- Function to update properties of a part
+local function updatePartProperties(part)
+    if part then
+        part.Size = Vector3.new(_G.HeadSize, _G.HeadSize, _G.HeadSize)
+        part.Transparency = 1
+        part.BrickColor = BrickColor.new("Red")
+        part.Material = Enum.Material.Neon
+        part.CanCollide = false
+        part.Massless = true
     end
 end
 
--- Function to create a GUI message
-local function createSuccessMessage()
-    if not scriptRunning then return end
-
-    -- Check for existing GUI and remove it to avoid duplication
-    if LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("SuccessMessageGui") then
-        LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("SuccessMessageGui"):Destroy()
-    end
-
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "SuccessMessageGui"
-    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
-    local textLabel = Instance.new("TextLabel")
-    textLabel.Text = "Gawang pinoy dos."
-    textLabel.Size = UDim2.new(0.3, 0, 0.1, 0)
-    textLabel.Position = UDim2.new(0.35, 0, 0.9, 0)
-    textLabel.TextScaled = true
-    textLabel.BackgroundTransparency = 1
-    textLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
-    textLabel.Parent = screenGui
-
-    task.delay(2, function()
-        if screenGui then
-            screenGui:Destroy()
-        end
-    end)
-end
-
--- Function to create and update HP Bars correctly
+-- Function to create or update HP bar
 local function createOrUpdateHPBar(character)
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
@@ -156,175 +112,278 @@ local function createOrUpdateHPBar(character)
     humanoid.Died:Connect(function()
         if billboardGui then billboardGui:Destroy() end
     end)
-    
+
     updateHealth()
 end
 
-local function highlightPlayer(player)
-    if player == LocalPlayer or not scriptRunning then return end
+-- Function to highlight all players
+local function highlightAllPlayers()
+    if not scriptRunning then return end
 
-    local character = player.Character or player.CharacterAdded:Wait()
+    -- Iterate through all players
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            local character = player.Character or player.CharacterAdded:Wait()
+            
+            if character then
+                -- Remove any existing highlights
+                for _, obj in pairs(character:GetChildren()) do
+                    if obj:IsA("Highlight") then
+                        obj:Destroy()
+                    end
+                end
 
-    if character and scriptRunning then
-        for _, obj in pairs(character:GetChildren()) do
-            if obj:IsA("Highlight") or obj:IsA("BillboardGui") then
-                obj:Destroy()
+                -- Create a new highlight
+                local highlight = Instance.new("Highlight")
+                highlight.Adornee = character
+                highlight.FillTransparency = 1  -- Make the inside of the highlight fully transparent
+
+                -- Set the color based on team (if applicable)
+                if player.Team == LocalPlayer.Team then
+                    highlight.OutlineColor = Color3.fromRGB(0, 255, 0)  -- Green for teammates
+                else
+                    highlight.OutlineColor = Color3.fromRGB(255, 0, 0)  -- Red for enemies
+                end
+                
+                highlight.Parent = character
             end
         end
-
-        local highlight = Instance.new("Highlight")
-        highlight.Adornee = character
-        highlight.FillTransparency = 1
-
-        if player.Team == LocalPlayer.Team then
-            highlight.OutlineColor = Color3.fromRGB(0, 255, 0)
-        else
-            highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
-        end
-        
-        highlight.Parent = character
-
-        createOrUpdateHPBar(character)
     end
 end
 
+-- Function to identify the highlighted player
+local function identifyHighlightedPlayer()
+    highlightedPlayer = nil
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local highlight = player.Character:FindFirstChild("Highlight")
+            if highlight and highlight.OutlineColor == Color3.fromRGB(0, 255, 0) then  -- Check for green highlight
+                highlightedPlayer = player
+                break
+            end
+        end
+    end
+end
+
+-- Function to handle player added
 local function onPlayerAdded(player)
     if not scriptRunning then return end
-
     player.CharacterAdded:Connect(function(character)
         if scriptRunning then
-            highlightPlayer(player)
+            highlightAllPlayers()
         end
     end)
 
     if player.Character then
-        highlightPlayer(player)
+        highlightAllPlayers()
     end
 end
 
-local function createControlButton(name, text, position, color, callback)
-    local existingButton = LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild(name)
-    if existingButton then
-        existingButton:Destroy()
-    end
-
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "ControlGui"
-    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
-    local button = Instance.new("TextButton")
-    button.Name = name
-    button.Text = text
-    button.Size = UDim2.new(0.15, 0, 0.05, 0)
-    button.Position = position
-    button.TextScaled = true
-    button.BackgroundColor3 = color
-    button.TextColor3 = Color3.fromRGB(255, 255, 255)
-    button.Parent = screenGui
-
-    button.MouseButton1Click:Connect(callback)
-end
-
-local function createRefreshButton()
-    createControlButton("RefreshButton", "ULITIN", UDim2.new(0.15, 0, 0.95, 0), Color3.fromRGB(0, 255, 0), function()
-        scriptRunning = false
-        scriptRunning = true
-        for _, player in pairs(Players:GetPlayers()) do
-            highlightPlayer(player)
+-- Function to handle player removing
+local function onPlayerRemoving(player)
+    if player.Character then
+        for _, obj in pairs(player.Character:GetChildren()) do
+            if obj:IsA("Highlight") or obj:IsA("BillboardGui") then
+                obj:Destroy()
+            end
         end
-        createSuccessMessage()
-    end)
+    end
 end
 
-local function createStopButton()
-    createControlButton("StopButton", "Ihinto", UDim2.new(0.3, 0, 0.95, 0), Color3.fromRGB(255, 0, 0), function()
+-- Function to handle map changes
+local function onMapChange()
+    if not scriptRunning then return end
+    highlightAllPlayers()
+end
+
+-- Function to initialize script
+local function initializeScript()
+    scriptRunning = true
+    for _, player in pairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            onPlayerAdded(player)
+        end
+    end
+end
+
+-- Function to apply aimbot
+local function applyAimbot()
+    if AimbotEnabled and AimbotHeld then
+        identifyHighlightedPlayer()
+        if highlightedPlayer and highlightedPlayer.Character and highlightedPlayer.Character:FindFirstChildOfClass("HumanoidRootPart") then
+            aimAt(highlightedPlayer.Character.HumanoidRootPart.Position)
+        end
+    end
+end
+
+-- Function to aim at a target with smooth transition
+local function aimAt(targetPosition)
+    local cameraPosition = Camera.CFrame.Position
+    local direction = (targetPosition - cameraPosition).unit
+    local targetCFrame = CFrame.new(cameraPosition, cameraPosition + direction)
+    Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, Smoothness / SmoothnessMax)
+end
+
+-- Function to handle input events
+local function onInputBegan(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        AimbotHeld = true
+    elseif input.KeyCode == Enum.KeyCode.Q then
+        AimbotEnabled = not AimbotEnabled
+        AimbotSection:GetToggle("Aimbot"):SetState(AimbotEnabled)
+    elseif input.KeyCode == Enum.KeyCode.Insert then
+        HighlightEnabled = not HighlightEnabled
+        EspSection:GetToggle("Highlight"):SetState(HighlightEnabled)
+        if not HighlightEnabled then
+            for _, player in pairs(Players:GetPlayers()) do
+                if player.Character then
+                    for _, obj in pairs(player.Character:GetChildren()) do
+                        if obj:IsA("Highlight") or obj:IsA("BillboardGui") then
+                            obj:Destroy()
+                        end
+                    end
+                end
+            end
+        else
+            highlightAllPlayers()
+        end
+    elseif input.KeyCode == Enum.KeyCode.Home then
+        if scriptRunning then
+            createSuccessMessage()
+        end
+    elseif input.KeyCode == Enum.KeyCode.End then
         scriptRunning = false
-        for _, player in pairs(Players:GetPlayers()) do
-            if player.Character then
-                for _, obj in pairs(player.Character:GetChildren()) do
-                    if obj:IsA("Highlight") or obj:IsA("BillboardGui") then
-                        obj:Destroy()
+        clearGui()
+        print("Script stopped.")
+    elseif input.KeyCode == Enum.KeyCode.Delete then
+        scriptRunning = true
+        initializeScript()
+        print("Script Refreshed.")
+    end
+end
+
+-- Function to handle input ended events
+local function onInputEnded(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        AimbotHeld = false
+    end
+end
+
+-- Connect events
+Players.PlayerAdded:Connect(onPlayerAdded)
+Players.PlayerRemoving:Connect(onPlayerRemoving)
+game:GetService("Workspace").ChildAdded:Connect(onMapChange)
+UserInputService.InputBegan:Connect(onInputBegan)
+UserInputService.InputEnded:Connect(onInputEnded)
+
+-- Initialize script
+initializeScript()
+
+-- Main loop to run aimbot and head modification
+RunService.RenderStepped:Connect(function()
+    if scriptRunning then
+        applyAimbot()
+        if HeadModEnabled then
+            for _, player in ipairs(Players:GetPlayers()) do
+                if player.Name ~= LocalPlayer.Name then
+                    pcall(function()
+                        local character = player.Character
+                        if character then
+                            local part
+                            if HeadOrTorso == "Head" then
+                                part = character:FindFirstChild("Head")
+                            elseif HeadOrTorso == "Torso" then
+                                part = character:FindFirstChild("UpperTorso") or character:FindFirstChild("LowerTorso") or character:FindFirstChild("Torso")
+                            end
+                            updatePartProperties(part)
+                        end
+                    end)
+                end
+            end
+        end
+    end
+end)
+
+-- Create GUI elements
+EspSection:AddDropdown({
+    Name = "Modify",
+    Default = "Head",
+    Options = {"Head", "Torso"},
+    Callback = function(option)
+        HeadOrTorso = option
+    end
+})
+
+EspSection:AddToggle({
+    Name = "Highlight",
+    Default = true,
+    Callback = function(value)
+        HighlightEnabled = value
+        if not HighlightEnabled then
+            for _, player in pairs(Players:GetPlayers()) do
+                if player.Character then
+                    for _, obj in pairs(player.Character:GetChildren()) do
+                        if obj:IsA("Highlight") or obj:IsA("BillboardGui") then
+                            obj:Destroy()
+                        end
+                    end
+                end
+            end
+        else
+            highlightAllPlayers()
+        end
+    end
+})
+
+AimbotSection:AddToggle({
+    Name = "Aimbot",
+    Default = false,
+    Callback = function(value)
+        AimbotEnabled = value
+    end
+})
+
+AimbotSection:AddSlider({
+    Name = "Smoothness",
+    Min = 1, -- slow
+    Max = 10, -- instant
+    Default = 2, -- current settings
+    Color = Color3.fromRGB(255, 255, 255),
+    Increment = 1,
+    ValueName = "block",
+    Callback = function(Value)
+        Smoothness = Value
+    end
+})
+
+EspSection:AddToggle({
+    Name = "HP Bar",
+    Default = false,
+    Callback = function(value)
+        HPBarEnabled = value
+        if HPBarEnabled then
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    createOrUpdateHPBar(player.Character)
+                end
+            end
+        else
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    local hpBar = player.Character:FindFirstChild("HPBar")
+                    if hpBar then
+                        hpBar:Destroy()
                     end
                 end
             end
         end
-        print("Script Stopped.")
-    end)
-end
-
-local function createSmoothnessSlider()
-    local existingSlider = LocalPlayer:WaitForChild("PlayerGui"):FindFirstChild("SmoothnessSliderGui")
-    if existingSlider then
-        existingSlider:Destroy()
     end
+})
 
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "SmoothnessSliderGui"
-    screenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
-
-    local sliderFrame = Instance.new("Frame")
-    sliderFrame.Size = UDim2.new(0.2, 0, 0.05, 0)
-    sliderFrame.Position = UDim2.new(0.8, 0, 0.9, 0)
-    sliderFrame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-    sliderFrame.Parent = screenGui
-
-    local sliderButton = Instance.new("TextButton")
-    sliderButton.Size = UDim2.new(0.1, 0, 1, 0)
-    sliderButton.Position = UDim2.new(Smoothness, 0, 0, 0)
-    sliderButton.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    sliderButton.Text = ""
-    sliderButton.Parent = sliderFrame
-
-    sliderButton.MouseButton1Down:Connect(function()
-        local dragging = true
-        local mouseMove, mouseUp
-
-        mouseMove = UserInputService.InputChanged:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseMovement and dragging then
-                local relativeX = math.clamp(input.Position.X - sliderFrame.AbsolutePosition.X, 0, sliderFrame.AbsoluteSize.X)
-                sliderButton.Position = UDim2.new(relativeX / sliderFrame.AbsoluteSize.X, 0, 0, 0)
-                Smoothness = sliderButton.Position.X.Scale
-            end
-        end)
-
-        mouseUp = UserInputService.InputEnded:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 then
-                dragging = false
-                mouseMove:Disconnect()
-                mouseUp:Disconnect()
-            end
-        end)
-    end)
-end
-
--- Create GUI elements
-createRefreshButton()
-createStopButton()
-createSmoothnessSlider()
-
--- Connect events
-for _, player in pairs(Players:GetPlayers()) do
-    onPlayerAdded(player)
-end
-Players.PlayerAdded:Connect(onPlayerAdded)
-
--- Connect to InputBegan event to listen for Aimbot toggle (Q key)
-UserInputService.InputBegan:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.Q then
-        toggleAimbot()
-    elseif input.KeyCode == Enum.KeyCode.LeftShift then
-        AimbotHeld = true
+EspSection:AddToggle({
+    Name = "Head Mod",
+    Default = false,
+    Callback = function(value)
+        HeadModEnabled = value
     end
-end)
-
--- Connect to InputEnded event to listen for Aimbot hold release (Shift key)
-UserInputService.InputEnded:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.LeftShift then
-        AimbotHeld = false
-    end
-end)
-
--- Main loop to run Aimbot
-RunService.RenderStepped:Connect(function()
-    applyAimbot()
-end)
+})
