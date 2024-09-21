@@ -28,62 +28,44 @@ local SettingsTab = Window:MakeTab({
     PremiumOnly = false
 })
 
--- Create sections
-local EspSection = EspTab:AddSection({
-    Name = "HIGHLIGHT"
-})
-
-local AimbotSection = AimbotTab:AddSection({
-    Name = "LOCKS"
-})
-
-local SettingsSection = SettingsTab:AddSection({
-    Name = "MISC"
-})
-
--- Global variables
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+-- Global Variables
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+local RaycastParams = RaycastParams.new()
+local scriptRunning = true
 
+RaycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+RaycastParams.IgnoreWater = true
+
+-- Aimbot and ESP Variables
 local AimbotEnabled = false
-local AimbotHeld = false
-local Smoothness = 2
-local SmoothnessMax = 10
+local WallCheckEnabled = false
 local HighlightEnabled = false
 local HPBarEnabled = false
-local HeadModEnabled = false
-local HeadOrTorso = "Head" -- Default to modifying the Head
-local scriptRunning = true
-local highlightedPlayer = nil
+local FOV = 150
+local Smoothness = 2
+local FOVCircleColor = Color3.fromRGB(25, 70, 200)
+local LockedPlayer = nil
+local AimbotActive = false
+local TeamCheckEnabled = false  -- Initially disabled
 
--- Global settings for head and torso modification
-_G.HeadSize = 15
-_G.Disabled = true
+-- FOV Circle
+local fovCircle = Drawing.new("Circle")
+fovCircle.Thickness = 2
+fovCircle.NumSides = 60
+fovCircle.Transparency = 0.5
+fovCircle.Color = FOVCircleColor
+fovCircle.Radius = FOV / 2
+fovCircle.Visible = true
 
--- Function to update properties of a part
-local function updatePartProperties(part)
-    if part then
-        part.Size = Vector3.new(_G.HeadSize, _G.HeadSize, _G.HeadSize)
-        part.Transparency = 1
-        part.BrickColor = BrickColor.new("Red")
-        part.Material = Enum.Material.Neon
-        part.CanCollide = false
-        part.Massless = true
-    end
-end
-
--- Function to create or update HP bar
-local function createOrUpdateHPBar(character)
+-- Function to create HP Bars
+local function createHPBar(character)
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
-
-    local existingHPBar = character:FindFirstChild("HPBar")
-    if existingHPBar then
-        existingHPBar:Destroy()
-    end
 
     local billboardGui = Instance.new("BillboardGui")
     billboardGui.Name = "HPBar"
@@ -103,218 +85,175 @@ local function createOrUpdateHPBar(character)
     hpBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
     hpBar.Parent = bgFrame
 
-    local function updateHealth()
-        local healthPercentage = humanoid.Health / humanoid.MaxHealth
-        hpBar.Size = UDim2.new(healthPercentage, 0, 1, 0)
-    end
-
-    humanoid:GetPropertyChangedSignal("Health"):Connect(updateHealth)
-    humanoid.Died:Connect(function()
-        if billboardGui then billboardGui:Destroy() end
-    end)
-
-    updateHealth()
-end
-
--- Function to highlight all players
-local function highlightAllPlayers()
-    if not scriptRunning then return end
-
-    -- Iterate through all players
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            local character = player.Character or player.CharacterAdded:Wait()
-            
-            if character then
-                -- Remove any existing highlights
-                for _, obj in pairs(character:GetChildren()) do
-                    if obj:IsA("Highlight") then
-                        obj:Destroy()
-                    end
-                end
-
-                -- Create a new highlight
-                local highlight = Instance.new("Highlight")
-                highlight.Adornee = character
-                highlight.FillTransparency = 1  -- Make the inside of the highlight fully transparent
-
-                -- Set the color based on team (if applicable)
-                if player.Team == LocalPlayer.Team then
-                    highlight.OutlineColor = Color3.fromRGB(0, 255, 0)  -- Green for teammates
-                else
-                    highlight.OutlineColor = Color3.fromRGB(255, 0, 0)  -- Red for enemies
-                end
-                
-                highlight.Parent = character
-            end
-        end
-    end
-end
-
--- Function to identify the highlighted player
-local function identifyHighlightedPlayer()
-    highlightedPlayer = nil
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local highlight = player.Character:FindFirstChild("Highlight")
-            if highlight and highlight.OutlineColor == Color3.fromRGB(0, 255, 0) then  -- Check for green highlight
-                highlightedPlayer = player
-                break
-            end
-        end
-    end
-end
-
--- Function to handle player added
-local function onPlayerAdded(player)
-    if not scriptRunning then return end
-    player.CharacterAdded:Connect(function(character)
+    humanoid:GetPropertyChangedSignal("Health"):Connect(function()
         if scriptRunning then
-            highlightAllPlayers()
+            local healthPercentage = humanoid.Health / humanoid.MaxHealth
+            hpBar.Size = UDim2.new(healthPercentage, 0, 1, 0)
         end
     end)
-
-    if player.Character then
-        highlightAllPlayers()
-    end
 end
 
--- Function to handle player removing
-local function onPlayerRemoving(player)
-    if player.Character then
-        for _, obj in pairs(player.Character:GetChildren()) do
+-- Function to highlight a player
+local function highlightPlayer(player)
+    if player == LocalPlayer or not scriptRunning then return end
+
+    local character = player.Character or player.CharacterAdded:Wait()
+
+    if character and scriptRunning then
+        for _, obj in pairs(character:GetChildren()) do
             if obj:IsA("Highlight") or obj:IsA("BillboardGui") then
                 obj:Destroy()
             end
         end
+
+        local highlight = Instance.new("Highlight")
+        highlight.Adornee = character
+        highlight.FillTransparency = 1
+
+        if player.Team == LocalPlayer.Team then
+            highlight.OutlineColor = Color3.fromRGB(0, 255, 0)  -- Green for teammates
+        else
+            highlight.OutlineColor = Color3.fromRGB(255, 0, 0)  -- Red for enemies
+        end
+
+        highlight.Parent = character
+
+        createHPBar(character)
     end
 end
 
--- Function to handle map changes
-local function onMapChange()
-    if not scriptRunning then return end
-    highlightAllPlayers()
-end
-
--- Function to initialize script
-local function initializeScript()
-    scriptRunning = true
+-- Function to highlight all players
+local function highlightAllPlayers()
     for _, player in pairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
-            onPlayerAdded(player)
+            highlightPlayer(player)
         end
     end
 end
 
--- Function to apply aimbot
-local function applyAimbot()
-    if AimbotEnabled and AimbotHeld then
-        identifyHighlightedPlayer()
-        if highlightedPlayer and highlightedPlayer.Character and highlightedPlayer.Character:FindFirstChildOfClass("HumanoidRootPart") then
-            aimAt(highlightedPlayer.Character.HumanoidRootPart.Position)
-        end
-    end
-end
+-- Function to aim at the closest player in FOV
+local function getClosestPlayerInFOV()
+    local closestPlayer = nil
+    local closestDistance = math.huge
 
--- Function to aim at a target with smooth transition
-local function aimAt(targetPosition)
-    local cameraPosition = Camera.CFrame.Position
-    local direction = (targetPosition - cameraPosition).unit
-    local targetCFrame = CFrame.new(cameraPosition, cameraPosition + direction)
-    Camera.CFrame = Camera.CFrame:Lerp(targetCFrame, Smoothness / SmoothnessMax)
-end
-
--- Function to handle input events
-local function onInputBegan(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        AimbotHeld = true
-    elseif input.KeyCode == Enum.KeyCode.Q then
-        AimbotEnabled = not AimbotEnabled
-        AimbotSection:GetToggle("Aimbot"):SetState(AimbotEnabled)
-    elseif input.KeyCode == Enum.KeyCode.Insert then
-        HighlightEnabled = not HighlightEnabled
-        EspSection:GetToggle("Highlight"):SetState(HighlightEnabled)
-        if not HighlightEnabled then
-            for _, player in pairs(Players:GetPlayers()) do
-                if player.Character then
-                    for _, obj in pairs(player.Character:GetChildren()) do
-                        if obj:IsA("Highlight") or obj:IsA("BillboardGui") then
-                            obj:Destroy()
-                        end
-                    end
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+            local headPosition = player.Character.Head.Position
+            local viewportPoint = Camera:WorldToViewportPoint(headPosition)
+            local mouseLocation = UserInputService:GetMouseLocation()
+            local distanceFromMouse = (Vector2.new(viewportPoint.X, viewportPoint.Y) - Vector2.new(mouseLocation.X, mouseLocation.Y)).Magnitude
+            if distanceFromMouse < FOV / 2 and viewportPoint.Z > 0 then
+                local distance = (Camera.CFrame.Position - headPosition).Magnitude
+                if distance < closestDistance then
+                    closestDistance = distance
+                    closestPlayer = player
                 end
             end
-        else
-            highlightAllPlayers()
         end
-    elseif input.KeyCode == Enum.KeyCode.Home then
-        if scriptRunning then
-            createSuccessMessage()
-        end
-    elseif input.KeyCode == Enum.KeyCode.End then
-        scriptRunning = false
-        clearGui()
-        print("Script stopped.")
-    elseif input.KeyCode == Enum.KeyCode.Delete then
-        scriptRunning = true
-        initializeScript()
-        print("Script Refreshed.")
     end
+    return closestPlayer
 end
 
--- Function to handle input ended events
-local function onInputEnded(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 then
-        AimbotHeld = false
-    end
-end
+-- Aimbot functionality to get the closest player, modified to check for team
+local function getClosestPlayerInFOV()
+    local closestPlayer = nil
+    local closestDistance = math.huge
 
--- Connect events
-Players.PlayerAdded:Connect(onPlayerAdded)
-Players.PlayerRemoving:Connect(onPlayerRemoving)
-game:GetService("Workspace").ChildAdded:Connect(onMapChange)
-UserInputService.InputBegan:Connect(onInputBegan)
-UserInputService.InputEnded:Connect(onInputEnded)
-
--- Initialize script
-initializeScript()
-
--- Main loop to run aimbot and head modification
-RunService.RenderStepped:Connect(function()
-    if scriptRunning then
-        applyAimbot()
-        if HeadModEnabled then
-            for _, player in ipairs(Players:GetPlayers()) do
-                if player.Name ~= LocalPlayer.Name then
-                    pcall(function()
-                        local character = player.Character
-                        if character then
-                            local part
-                            if HeadOrTorso == "Head" then
-                                part = character:FindFirstChild("Head")
-                            elseif HeadOrTorso == "Torso" then
-                                part = character:FindFirstChild("UpperTorso") or character:FindFirstChild("LowerTorso") or character:FindFirstChild("Torso")
-                            end
-                            updatePartProperties(part)
-                        end
-                    end)
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
+            
+            -- Skip teammates if TeamCheck is enabled
+            if TeamCheckEnabled and player.Team == LocalPlayer.Team then
+                continue  -- Skip to the next player if they're on the same team
+            end
+            
+            local headPosition = player.Character.Head.Position
+            local viewportPoint = Camera:WorldToViewportPoint(headPosition)
+            local mouseLocation = UserInputService:GetMouseLocation()
+            local distanceFromMouse = (Vector2.new(viewportPoint.X, viewportPoint.Y) - Vector2.new(mouseLocation.X, mouseLocation.Y)).Magnitude
+            if distanceFromMouse < FOV / 2 and viewportPoint.Z > 0 then
+                local distance = (Camera.CFrame.Position - headPosition).Magnitude
+                if distance < closestDistance then
+                    closestDistance = distance
+                    closestPlayer = player
                 end
             end
+        end
+    end
+    return closestPlayer
+end
+
+-- Aimbot functionality
+local function aimAtPlayer(player)
+    if player and player.Character and player.Character:FindFirstChild("Head") then
+        local headPosition = player.Character.Head.Position
+        local cameraPosition = Camera.CFrame.Position
+        local direction = (headPosition - cameraPosition).unit
+        local newCFrame = CFrame.new(cameraPosition, cameraPosition + direction)
+        Camera.CFrame = Camera.CFrame:Lerp(newCFrame, Smoothness / 10)
+    end
+end
+
+-- Function to check for key press and handle aimbot activation
+local shiftKey = Enum.KeyCode.LeftShift
+
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == shiftKey and AimbotEnabled then
+        -- Find the closest player within FOV when Shift is pressed
+        LockedPlayer = getClosestPlayerInFOV()
+        if LockedPlayer then
+            AimbotActive = true  -- Enable aimbot when locked onto a player
         end
     end
 end)
 
--- Create GUI elements
-EspSection:AddDropdown({
-    Name = "Modify",
-    Default = "Head",
-    Options = {"Head", "Torso"},
-    Callback = function(option)
-        HeadOrTorso = option
+UserInputService.InputEnded:Connect(function(input)
+    if input.KeyCode == shiftKey then
+        AimbotActive = false  -- Disable aimbot when Shift is released
+        LockedPlayer = nil  -- Clear the locked player when the key is released
     end
-})
+end)
 
-EspSection:AddToggle({
+RunService.RenderStepped:Connect(function()
+    if AimbotActive and LockedPlayer then
+        aimAtPlayer(LockedPlayer)
+    end
+
+    -- Update FOV Circle Position
+    local mousePos = UserInputService:GetMouseLocation()
+    fovCircle.Position = Vector2.new(mousePos.X, mousePos.Y)
+end)
+
+-- Function to handle new players and respawning characters
+local function onPlayerAdded(player)
+    player.CharacterAdded:Connect(function(character)
+        if HighlightEnabled then
+            highlightPlayer(player)  -- Highlight new players
+        end
+        if HPBarEnabled then
+            createHPBar(character)  -- Create HP bar for new players
+        end
+    end)
+end
+
+-- Connect player addition and respawn events
+Players.PlayerAdded:Connect(onPlayerAdded)
+
+-- Handle existing players who are already in the game
+for _, player in pairs(Players:GetPlayers()) do
+    onPlayerAdded(player)  -- Ensure existing players are highlighted and have HP bars
+    if player.Character then
+        if HighlightEnabled then
+            highlightPlayer(player)  -- Highlight already existing characters
+        end
+        if HPBarEnabled then
+            createHPBar(player.Character)  -- Create HP bar for already existing characters
+        end
+    end
+end
+
+-- SettingsTab: Highlight Toggle
+EspTab:AddToggle({
     Name = "Highlight",
     Default = true,
     Callback = function(value)
@@ -323,40 +262,20 @@ EspSection:AddToggle({
             for _, player in pairs(Players:GetPlayers()) do
                 if player.Character then
                     for _, obj in pairs(player.Character:GetChildren()) do
-                        if obj:IsA("Highlight") or obj:IsA("BillboardGui") then
+                        if obj:IsA("Highlight") then
                             obj:Destroy()
                         end
                     end
                 end
             end
         else
-            highlightAllPlayers()
+            highlightAllPlayers()  -- Highlight all players when enabled
         end
     end
 })
 
-AimbotSection:AddToggle({
-    Name = "Aimbot",
-    Default = false,
-    Callback = function(value)
-        AimbotEnabled = value
-    end
-})
-
-AimbotSection:AddSlider({
-    Name = "Smoothness",
-    Min = 1, -- slow
-    Max = 10, -- instant
-    Default = 2, -- current settings
-    Color = Color3.fromRGB(255, 255, 255),
-    Increment = 1,
-    ValueName = "block",
-    Callback = function(Value)
-        Smoothness = Value
-    end
-})
-
-EspSection:AddToggle({
+-- SettingsTab: HP Bar Toggle
+EspTab:AddToggle({
     Name = "HP Bar",
     Default = false,
     Callback = function(value)
@@ -364,12 +283,12 @@ EspSection:AddToggle({
         if HPBarEnabled then
             for _, player in pairs(Players:GetPlayers()) do
                 if player ~= LocalPlayer and player.Character then
-                    createOrUpdateHPBar(player.Character)
+                    createHPBar(player.Character)
                 end
             end
         else
             for _, player in pairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer and player.Character then
+                if player.Character then
                     local hpBar = player.Character:FindFirstChild("HPBar")
                     if hpBar then
                         hpBar:Destroy()
@@ -380,10 +299,73 @@ EspSection:AddToggle({
     end
 })
 
-EspSection:AddToggle({
-    Name = "Head Mod",
+-- SettingsTab: Aimbot Toggle
+AimbotTab:AddToggle({
+    Name = "Aimbot",
     Default = false,
     Callback = function(value)
-        HeadModEnabled = value
+        AimbotEnabled = value
     end
 })
+
+-- AimbotTab: Team Check Toggle
+AimbotTab:AddToggle({
+    Name = "Team Check",
+    Default = false,
+    Callback = function(value)
+        TeamCheckEnabled = value  -- Enable or disable team check
+    end
+})
+
+-- SettingsTab: Wall Check Toggle
+EspTab:AddToggle({
+    Name = "Wall Check",
+    Default = true,
+    Callback = function(value)
+        WallCheckEnabled = value  -- Toggle wall check on or off
+    end
+})
+
+-- SettingsTab: FOV Size Slider
+AimbotTab:AddSlider({
+    Name = "FOV Size",
+    Min = 50,
+    Max = 300,
+    Default = FOV,
+    Color = Color3.fromRGB(255, 255, 255),
+    Increment = 5,
+    ValueName = "blocks",
+    Callback = function(value)
+        FOV = value
+        fovCircle.Radius = value / 2  -- Update FOV circle size
+    end
+})
+
+-- **Color Picker for FOV Circle**
+AimbotTab:AddColorpicker({
+    Name = "FOV Color",
+    Default = FOVCircleColor,  -- Default color
+    Callback = function(value)
+        FOVCircleColor = value  -- Update the FOV circle color
+        fovCircle.Color = FOVCircleColor
+    end
+})
+
+-- SettingsTab: Smoothness Slider
+AimbotTab:AddSlider({
+    Name = "Smoothness",
+    Min = 1, -- slow
+    Max = 10, -- instant
+    Default = Smoothness, -- current settings
+    Color = Color3.fromRGB(255, 255, 255),
+    Increment = 1,
+    ValueName = "block",
+    Callback = function(value)
+        Smoothness = value
+    end
+})
+
+
+
+-- Initialize OrionLib
+OrionLib:Init()
