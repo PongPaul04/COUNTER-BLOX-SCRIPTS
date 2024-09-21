@@ -154,7 +154,30 @@ local function getClosestPlayerInFOV()
     return closestPlayer
 end
 
--- Aimbot functionality to get the closest player, modified to check for team
+-- Function to perform raycast check to ensure there is no wall between local player and target
+local function isVisible(player)
+    if not player or not player.Character or not player.Character:FindFirstChild("Head") then
+        return false
+    end
+
+    local headPosition = player.Character.Head.Position
+    local origin = Camera.CFrame.Position  -- Local player's camera position
+    
+    -- Set up raycast parameters to ignore the local player and other irrelevant objects
+    RaycastParams.FilterDescendantsInstances = {LocalPlayer.Character}  -- Ignore local player's own character
+
+    -- Perform raycast from the local player (camera) to the target player's head
+    local rayResult = workspace:Raycast(origin, headPosition - origin, RaycastParams)
+    
+    -- If there's no hit or if the hit part belongs to the target player, they are visible
+    if not rayResult or rayResult.Instance:IsDescendantOf(player.Character) then
+        return true
+    else
+        return false  -- Something (like a wall) is blocking the view
+    end
+end
+
+-- Optimized function to get the closest player within FOV while checking for walls
 local function getClosestPlayerInFOV()
     local closestPlayer = nil
     local closestDistance = math.huge
@@ -164,15 +187,24 @@ local function getClosestPlayerInFOV()
             
             -- Skip teammates if TeamCheck is enabled
             if TeamCheckEnabled and player.Team == LocalPlayer.Team then
-                continue  -- Skip to the next player if they're on the same team
+                continue  -- Skip teammates
             end
             
             local headPosition = player.Character.Head.Position
             local viewportPoint = Camera:WorldToViewportPoint(headPosition)
             local mouseLocation = UserInputService:GetMouseLocation()
             local distanceFromMouse = (Vector2.new(viewportPoint.X, viewportPoint.Y) - Vector2.new(mouseLocation.X, mouseLocation.Y)).Magnitude
+
+            -- Check if player is within FOV and in front of the camera (viewportPoint.Z > 0)
             if distanceFromMouse < FOV / 2 and viewportPoint.Z > 0 then
                 local distance = (Camera.CFrame.Position - headPosition).Magnitude
+
+                -- Perform wall check using raycasting if WallCheckEnabled is true
+                if WallCheckEnabled and not isVisible(player) then
+                    continue  -- Skip if there is an obstacle between the player and target
+                end
+
+                -- Select the closest player within FOV
                 if distance < closestDistance then
                     closestDistance = distance
                     closestPlayer = player
@@ -180,8 +212,10 @@ local function getClosestPlayerInFOV()
             end
         end
     end
+
     return closestPlayer
 end
+
 
 -- Aimbot functionality
 local function aimAtPlayer(player)
