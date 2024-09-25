@@ -28,4 +28,4 @@ A collection of powerful scripts for **Counter Blox** featuring ESP and Aimbot f
 
 Let me know if you encounter some bugs/error
 
-[DISCORD](discord.gg/XxAetRaPAQ)
+[DISCORD](https://discord.gg/XxAetRaPAQ)
