@@ -10,23 +10,9 @@ local Window = OrionLib:MakeWindow({
 })
 
 -- Create tabs
-local EspTab = Window:MakeTab({
-    Name = "ESP",
-    Icon = "rbxassetid://4483345998",
-    PremiumOnly = false
-})
-
-local AimbotTab = Window:MakeTab({
-    Name = "AIMBOT",
-    Icon = "rbxassetid://4483345998",
-    PremiumOnly = false
-})
-
-local SettingsTab = Window:MakeTab({
-    Name = "Settings",
-    Icon = "rbxassetid://4483345998",
-    PremiumOnly = false
-})
+local EspTab = Window:MakeTab({ Name = "ESP", Icon = "rbxassetid://4483345998", PremiumOnly = false })
+local AimbotTab = Window:MakeTab({ Name = "AIMBOT", Icon = "rbxassetid://4483345998", PremiumOnly = false })
+local SettingsTab = Window:MakeTab({ Name = "Settings", Icon = "rbxassetid://4483345998", PremiumOnly = false })
 
 -- Global Variables
 local Players = game:GetService("Players")
@@ -34,9 +20,12 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
+local HighlightEnabled = false
+local HPBarEnabled = false
 local Mouse = LocalPlayer:GetMouse()
 local RaycastParams = RaycastParams.new()
 local scriptRunning = true
+local MAX_SEARCH_DISTANCE = 1000
 
 RaycastParams.FilterType = Enum.RaycastFilterType.Blacklist
 RaycastParams.IgnoreWater = true
@@ -44,66 +33,72 @@ RaycastParams.IgnoreWater = true
 -- Aimbot and ESP Variables
 local AimbotEnabled = false
 local WallCheckEnabled = false
-local HighlightEnabled = false
-local HPBarEnabled = false
 local FOV = 150
 local Smoothness = 2
 local FOVCircleColor = Color3.fromRGB(25, 70, 200)
 local LockedPlayer = nil
 local AimbotActive = false
 local TeamCheckEnabled = false  -- Initially disabled
+local c = workspace.CurrentCamera
+local ps = game:GetService("Players")
+local lp = ps.LocalPlayer
+local rs = game:GetService("RunService")
+
 
 -- FOV Circle
 local fovCircle = Drawing.new("Circle")
-fovCircle.Thickness = 2
+fovCircle.Thickness = 3
 fovCircle.NumSides = 60
 fovCircle.Transparency = 0.5
 fovCircle.Color = FOVCircleColor
 fovCircle.Radius = FOV / 2
 fovCircle.Visible = true
 
--- Function to create HP Bars
+-- Function to create HP bar for a character
 local function createHPBar(character)
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid then return end
 
+    -- Check if the HP bar already exists
+    if character:FindFirstChild("HPBar") then return end
+
     local billboardGui = Instance.new("BillboardGui")
     billboardGui.Name = "HPBar"
-    billboardGui.Size = UDim2.new(4, 0, 1, 0)
-    billboardGui.StudsOffset = Vector3.new(0, 3, 0)
+    billboardGui.Size = UDim2.new(0.2, 0, 4, 0)
+    billboardGui.StudsOffset = Vector3.new(2, 0, 0)
     billboardGui.AlwaysOnTop = true
     billboardGui.Parent = character
 
     local bgFrame = Instance.new("Frame")
-    bgFrame.Size = UDim2.new(1, 0, 0.2, 0)
-    bgFrame.Position = UDim2.new(0, 0, 0.8, 0)
+    bgFrame.Size = UDim2.new(1, 0, 1, 0)
+    bgFrame.Position = UDim2.new(0, 0, 0, 0)
     bgFrame.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
     bgFrame.Parent = billboardGui
 
     local hpBar = Instance.new("Frame")
     hpBar.Size = UDim2.new(1, 0, 1, 0)
+    hpBar.Position = UDim2.new(0, 0, 0, 0)
     hpBar.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
     hpBar.Parent = bgFrame
 
     humanoid:GetPropertyChangedSignal("Health"):Connect(function()
-        if scriptRunning then
-            local healthPercentage = humanoid.Health / humanoid.MaxHealth
-            hpBar.Size = UDim2.new(healthPercentage, 0, 1, 0)
-        end
+        local healthPercentage = humanoid.Health / humanoid.MaxHealth
+        hpBar.Size = UDim2.new(1, 0, healthPercentage, 0)
+        hpBar.Position = UDim2.new(0, 0, 1 - healthPercentage, 0)
     end)
 end
 
 -- Function to highlight a player
 local function highlightPlayer(player)
-    if player == LocalPlayer or not scriptRunning then return end
+    if player == LocalPlayer then return end
 
     local character = player.Character or player.CharacterAdded:Wait()
 
-    if character and scriptRunning then
-        for _, obj in pairs(character:GetChildren()) do
-            if obj:IsA("Highlight") or obj:IsA("BillboardGui") then
-                obj:Destroy()
-            end
+    if character then
+        -- Remove existing highlight
+        local existingHighlight = character:FindFirstChildOfClass("Highlight")
+        if existingHighlight then
+            existingHighlight:Destroy()
         end
 
         local highlight = Instance.new("Highlight")
@@ -117,19 +112,24 @@ local function highlightPlayer(player)
         end
 
         highlight.Parent = character
-
-        createHPBar(character)
     end
 end
-
--- Function to highlight all players
-local function highlightAllPlayers()
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            highlightPlayer(player)
-        end
-    end
+-- Character added and removed handling
+local function onCharacterAdded(character)
+    if HighlightEnabled then highlightPlayer(LocalPlayer) end
+    if HPBarEnabled then createHPBar(character) end
 end
+
+local function onCharacterRemoving(character)
+    local highlight = character:FindFirstChildOfClass("Highlight")
+    if highlight then highlight:Destroy() end
+    
+    local hpBar = character:FindFirstChild("HPBar")
+    if hpBar then hpBar:Destroy() end
+end
+
+LocalPlayer.CharacterAdded:Connect(onCharacterAdded)
+LocalPlayer.CharacterRemoving:Connect(onCharacterRemoving)
 
 -- Function to aim at the closest player in FOV
 local function getClosestPlayerInFOV()
@@ -258,82 +258,163 @@ RunService.RenderStepped:Connect(function()
     fovCircle.Position = Vector2.new(mousePos.X, mousePos.Y)
 end)
 
--- Function to handle new players and respawning characters
 local function onPlayerAdded(player)
     player.CharacterAdded:Connect(function(character)
+        createHPBar(character)  -- Create HP bar for new players
         if HighlightEnabled then
             highlightPlayer(player)  -- Highlight new players
-        end
-        if HPBarEnabled then
-            createHPBar(character)  -- Create HP bar for new players
         end
     end)
 end
 
--- Connect player addition and respawn events
 Players.PlayerAdded:Connect(onPlayerAdded)
 
--- Handle existing players who are already in the game
+-- Handle existing players
 for _, player in pairs(Players:GetPlayers()) do
-    onPlayerAdded(player)  -- Ensure existing players are highlighted and have HP bars
     if player.Character then
-        if HighlightEnabled then
-            highlightPlayer(player)  -- Highlight already existing characters
+        createHPBar(player.Character)  -- Create HP bar for already existing characters
+    end
+    player.CharacterAdded:Connect(function(character)
+        createHPBar(character)  -- Ensure HP bar for respawns
+    end)
+end
+
+local ESPEnabled = false  -- Initialize the ESP toggle
+
+local function getdistancefc(part)
+    return (part.Position - c.CFrame.Position).Magnitude
+end
+
+local function esp(p, cr)
+    local h = cr:WaitForChild("Humanoid")
+    local head = cr:WaitForChild("Head")  -- Changed from hrp to head
+
+    local text = Drawing.new("Text")
+    text.Visible = false
+    text.Center = true 
+    text.Outline = true 
+    text.Font = 2
+    text.Color = Color3.fromRGB(255, 255, 255)
+    text.Size = 13
+
+    local c1, c2, c3
+
+    local function dc()
+        text.Visible = false
+        text:Remove()
+        if c1 then c1:Disconnect() c1 = nil end
+        if c2 then c2:Disconnect() c2 = nil end
+        if c3 then c3:Disconnect() c3 = nil end
+    end
+
+    c2 = cr.AncestryChanged:Connect(function(_, parent)
+        if not parent then dc() end
+    end)
+
+    c3 = h.HealthChanged:Connect(function(v)
+        if (v <= 0) or (h:GetState() == Enum.HumanoidStateType.Dead) then
+            dc()
         end
-        if HPBarEnabled then
-            createHPBar(player.Character)  -- Create HP bar for already existing characters
+    end)
+
+    c1 = rs.RenderStepped:Connect(function()
+        if ESPEnabled then
+            local head_pos, head_os = c:WorldToViewportPoint(head.Position + Vector3.new(0, 2, 0))  -- Added Y offset of 2
+            if head_os then
+                text.Position = Vector2.new(head_pos.X, head_pos.Y)
+                text.Text = p.Name .. ' (' .. tostring(math.floor(getdistancefc(head))) .. ' M)'  -- Use 'studs' instead of 'ms'
+                text.Visible = true 
+            else
+                text.Visible = false 
+            end
+        else
+            text.Visible = false  -- Hide the text if ESP is disabled
         end
+    end)
+end
+
+local function p_added(p)
+    if p.Character then
+        esp(p, p.Character)
+    end
+    p.CharacterAdded:Connect(function(cr)
+        esp(p, cr)
+    end)
+end
+
+
+
+-- Toggle for highlighting
+pcall(function()
+    EspTab:AddToggle({
+        Name = "Highlight",
+        Default = false,
+        Callback = function(value)
+            HighlightEnabled = value
+            for _, player in pairs(Players:GetPlayers()) do
+                if player.Character then
+                    if HighlightEnabled then
+                        highlightPlayer(player)
+                    else
+                        local highlight = player.Character:FindFirstChildOfClass("Highlight")
+                        if highlight then highlight:Destroy() end
+                    end
+                end
+            end
+        end
+    })
+end)
+
+-- Toggle for HP bar
+pcall(function()
+    EspTab:AddToggle({
+        Name = "HP Bar",
+        Default = false,
+        Callback = function(value)
+            HPBarEnabled = value
+            for _, player in pairs(Players:GetPlayers()) do
+                if player.Character then
+                    if HPBarEnabled then
+                        createHPBar(player.Character)
+                    else
+                        local hpBar = player.Character:FindFirstChild("HPBar")
+                        if hpBar then hpBar:Destroy() end
+                    end
+                end
+            end
+        end
+    })
+end)
+
+
+-- Toggle implementation
+pcall(function()
+    EspTab:AddToggle({
+        Name = "NAME DISTANCE",
+        Default = false,
+        Callback = function(value)
+            ESPEnabled = value
+            -- Hide all existing ESP texts if disabled
+            for _, player in pairs(ps:GetPlayers()) do
+                if player.Character then
+                    local text = player.Character:FindFirstChildOfClass("Text")
+                    if text then
+                        text.Visible = false
+                    end
+                end
+            end
+        end
+    })
+end)
+
+for i, p in next, ps:GetPlayers() do 
+    if p ~= lp then
+        p_added(p)
     end
 end
 
--- SettingsTab: Highlight Toggle
-EspTab:AddToggle({
-    Name = "Highlight",
-    Default = true,
-    Callback = function(value)
-        HighlightEnabled = value
-        if not HighlightEnabled then
-            for _, player in pairs(Players:GetPlayers()) do
-                if player.Character then
-                    for _, obj in pairs(player.Character:GetChildren()) do
-                        if obj:IsA("Highlight") then
-                            obj:Destroy()
-                        end
-                    end
-                end
-            end
-        else
-            highlightAllPlayers()  -- Highlight all players when enabled
-        end
-    end
-})
-
--- SettingsTab: HP Bar Toggle
-EspTab:AddToggle({
-    Name = "HP Bar",
-    Default = false,
-    Callback = function(value)
-        HPBarEnabled = value
-        if HPBarEnabled then
-            for _, player in pairs(Players:GetPlayers()) do
-                if player ~= LocalPlayer and player.Character then
-                    createHPBar(player.Character)
-                end
-            end
-        else
-            for _, player in pairs(Players:GetPlayers()) do
-                if player.Character then
-                    local hpBar = player.Character:FindFirstChild("HPBar")
-                    if hpBar then
-                        hpBar:Destroy()
-                    end
-                end
-            end
-        end
-    end
-})
-
--- SettingsTab: Aimbot Toggle
+ps.PlayerAdded:Connect(p_added)
+pcall(function()
 AimbotTab:AddToggle({
     Name = "Aimbot",
     Default = false,
@@ -341,8 +422,8 @@ AimbotTab:AddToggle({
         AimbotEnabled = value
     end
 })
-
--- AimbotTab: Team Check Toggle
+end)
+pcall(function()
 AimbotTab:AddToggle({
     Name = "Team Check",
     Default = false,
@@ -350,21 +431,21 @@ AimbotTab:AddToggle({
         TeamCheckEnabled = value  -- Enable or disable team check
     end
 })
-
--- SettingsTab: Wall Check Toggle
-EspTab:AddToggle({
+end)
+pcall(function()
+AimbotTab:AddToggle({
     Name = "Wall Check",
-    Default = true,
+    Default = false,
     Callback = function(value)
         WallCheckEnabled = value  -- Toggle wall check on or off
     end
 })
-
--- SettingsTab: FOV Size Slider
+end)
+pcall(function()
 AimbotTab:AddSlider({
     Name = "FOV Size",
     Min = 50,
-    Max = 300,
+    Max = 1000,
     Default = FOV,
     Color = Color3.fromRGB(255, 255, 255),
     Increment = 5,
@@ -374,8 +455,8 @@ AimbotTab:AddSlider({
         fovCircle.Radius = value / 2  -- Update FOV circle size
     end
 })
-
--- **Color Picker for FOV Circle**
+end)
+pcall(function()
 AimbotTab:AddColorpicker({
     Name = "FOV Color",
     Default = FOVCircleColor,  -- Default color
@@ -384,8 +465,8 @@ AimbotTab:AddColorpicker({
         fovCircle.Color = FOVCircleColor
     end
 })
-
--- SettingsTab: Smoothness Slider
+end)
+pcall(function()
 AimbotTab:AddSlider({
     Name = "Smoothness",
     Min = 1, -- slow
@@ -398,8 +479,15 @@ AimbotTab:AddSlider({
         Smoothness = value
     end
 })
+end)
 
-
+-- Player added handling
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function(character)
+        if HighlightEnabled then highlightPlayer(player) end
+        if HPBarEnabled then createHPBar(character) end
+    end)
+end)
 
 -- Initialize OrionLib
 OrionLib:Init()
